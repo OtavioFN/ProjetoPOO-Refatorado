@@ -8,6 +8,7 @@ from Classes.Review import Review
 from Classes.Ticket import Ticket
 from Classes.PaymentFactory import PaymentFactory
 from Classes.DeliveryFactory import DeliveryFactory
+from Classes.OrderObserver import InventoryObserver
 import time
 
 class ECommerceSystem:
@@ -31,8 +32,10 @@ class ECommerceSystem:
         self.orders = []
         self.cart = Cart()
         self.current_user = None
-        self._load_initial_data()
         
+        self.inventory_observer = InventoryObserver()
+        
+        self._load_initial_data()
         self._initialized = True
         
     def _load_initial_data(self):
@@ -342,7 +345,6 @@ class ECommerceSystem:
         if payment_approved:
             print("\n\tPayment confirmed!")
             
-            # USO DO BUILDER/DIRECTOR PARA CRIAR O PEDIDO
             builder = OrderBuilder()
             director = OrderDirector(builder)
             
@@ -357,7 +359,13 @@ class ECommerceSystem:
                     delivery_cost=delivery_cost,
                     coupon_info=coupon_info
                 )
+
+                new_order.attach(self.inventory_observer)
+                
                 self.orders.append(new_order)
+                
+                new_order.notify(self)
+                
                 return True
             except ValueError as e:
                 print(f"\n\t[ERRO] Falha ao construir o pedido: {e}")
@@ -567,7 +575,7 @@ class ECommerceSystem:
                         print("\n\tResponse sent!"); UI.pause_and_clear()
                     else: print("\n\t[ERROR] Invalid ID."); UI.pause_and_clear()
                 elif choice == 2:
-                    UI.clear_screen(); print("\n\t--- Ticket History ---")
+                    UI.clear_screen(); print("\n\t--- Ticket History ---") # <-- Linha Corrigida
                     if not self.tickets: print("\n\tNo tickets.")
                     else:
                         for ticket in self.tickets:

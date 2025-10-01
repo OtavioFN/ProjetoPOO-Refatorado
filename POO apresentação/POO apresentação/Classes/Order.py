@@ -12,6 +12,18 @@ class Order:
         self.delivery_cost = 0.0
         self.applied_coupon = None
         self.payment_id = None
+        self._observers = []
+
+    def attach(self, observer):
+        if observer not in self._observers:
+            self._observers.append(observer)
+
+    def detach(self, observer):
+        self._observers.remove(observer)
+
+    def notify(self, system_context):
+        for observer in self._observers:
+            observer.update(self, system_context)
 
 class OrderBuilder:
     def __init__(self):
@@ -47,12 +59,10 @@ class OrderBuilder:
         return self
 
     def build(self):
-        # Validação básica antes de retornar o objeto final
         if not all([self.order.id, self.order.user, self.order.items, self.order.delivery_address]):
             raise ValueError("Pedido incompleto: Dados essenciais ausentes.")
         
         result = self.order
-        self.reset(None) # Limpar o builder após construir
         return result
 
 class OrderDirector:
