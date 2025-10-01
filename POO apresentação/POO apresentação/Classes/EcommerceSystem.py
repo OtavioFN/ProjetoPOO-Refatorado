@@ -3,13 +3,26 @@ from Classes.Coupon import FixedCoupon, PercentageCoupon
 from Classes.UI import UI
 from Classes.Cart import Cart
 from Classes.Product import Product
-from Classes.Order import Order
+from Classes.Order import Order, OrderDirector, OrderBuilder
 from Classes.Review import Review
 from Classes.Ticket import Ticket
+from Classes.PaymentFactory import PaymentFactory
+from Classes.DeliveryFactory import DeliveryFactory
 import time
 
 class ECommerceSystem:
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ECommerceSystem, cls).__new__(cls)
+            cls._instance._initialized = False 
+        return cls._instance
+
     def __init__(self):
+        if self._initialized:
+            return
+            
         self.users = {}
         self.products = []
         self.reviews = []
@@ -19,7 +32,9 @@ class ECommerceSystem:
         self.cart = Cart()
         self.current_user = None
         self._load_initial_data()
-
+        
+        self._initialized = True
+        
     def _load_initial_data(self):
         admin = Admin('admin', '1234')
         self.users['admin'] = admin
@@ -249,8 +264,18 @@ class ECommerceSystem:
                 print(f"\n\t>>> Coupon '{coupon.code}' applied! Discount of $ {discount:.2f} <<<")
             else: print("\n\t[ERROR] Invalid or inactive coupon.")
 
-        final_total = max(0, original_total - discount)
-        print(f"\n\tTOTAL TO PAY: $ {final_total:.2f}")
+        products_total = max(0, original_total - discount)
+
+        delivery_method, delivery_cost = self._select_delivery(products_total)
+        if delivery_method is None: return 
+        
+        final_total = products_total + delivery_cost
+        
+        print("\n\t" + "="*40)
+        print(f"\tProducts Total: $ {products_total:.2f}")
+        print(f"\tDelivery Cost ({delivery_method.get_name()}): $ {delivery_cost:.2f}")
+        print(f"\tFINAL TOTAL: $ {final_total:.2f}")
+        print("\t" + "="*40)
         UI.wait_for_enter()
 
         if not isinstance(self.current_user, Customer) or not self.current_user.addresses: print("\n\tNo registered addresses."); UI.pause_and_clear(); return
@@ -259,29 +284,84 @@ class ECommerceSystem:
         try:
             selected_address = self.current_user.addresses[int(input("\n\t=> ")) - 1]
         except (ValueError, IndexError): print("\n\t[ERROR] Invalid choice."); UI.pause_and_clear(); return
+        
+        UI.clear_screen(); print("\n\t--- Select Payment Method ---")
+        print("\t1 - Credit Card\n\t2 - Bank Slip\n\t0 - Cancel")
+        try:
+            payment_option = int(input("\n\t=> "))
+            if payment_option == 1:
+                payment_method = 'creditcard'
+            elif payment_option == 2:
+                payment_method = 'bankslip'
+            elif payment_option == 0:
+                print("\n\t[INFO] Order cancelled."); UI.pause_and_clear(); return
+            else:
+                raise ValueError
+        except ValueError:
+            print("\n\t[ERROR] Invalid option."); UI.pause_and_clear(); return
 
-        success = self._payment_process(selected_address, final_total, applied_coupon)
+        success = self._payment_process(payment_method, selected_address, final_total, applied_coupon, delivery_method.get_name(), delivery_cost)
         if success: print("\n\tOrder placed successfully!"); self.cart.clear()
         else: print("\n\tPayment failed. The order was not completed.")
         UI.pause_and_clear(4)
 
-    def _payment_process(self, address, total, coupon_info):
-        UI.clear_screen(); print("\n\t--- Payment simulation ---")
-        print("\n\tProcessing payment...")
-        time.sleep(3)
+    def _select_delivery(self, products_total):
+        while True:
+            UI.clear_screen(); print("\n\t--- Select Delivery Method ---")
+            
+            factory = DeliveryFactory()
+            standard = factory.create_delivery_strategy('standard')
+            express = factory.create_delivery_strategy('express')
+            
+            standard_cost = standard.calculate_cost(products_total)
+            express_cost = express.calculate_cost(products_total)
+            
+            print(f"\t1 - {standard.get_name()} ({standard.get_estimated_time()}) | Cost: $ {standard_cost:.2f}")
+            print(f"\t2 - {express.get_name()} ({express.get_estimated_time()}) | Cost: $ {express_cost:.2f}")
+            print("\t0 - Cancel Order")
 
-        if True:
+            try:
+                choice = int(input("\n\t=> "))
+                if choice == 1: return standard, standard_cost
+                elif choice == 2: return express, express_cost
+                elif choice == 0: return None, None
+                else: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
+            except ValueError: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
+
+    def _payment_process(self, payment_method, address, total, coupon_info, delivery_method_name, delivery_cost):
+        UI.clear_screen(); print("\n\t--- Payment simulation ---")
+        
+        try:
+            factory = PaymentFactory()
+            strategy = factory.create_payment_strategy(payment_method)
+            payment_approved = strategy.process_payment(total)
+        
+        except ValueError as e:
+            print(f"\n\t[ERROR] {e}"); return False
+
+        if payment_approved:
             print("\n\tPayment confirmed!")
-            new_order = Order(
-                id=self._generate_new_id(self.orders),
-                user=self.current_user.username,
-                items=self.cart.items.copy(),
-                total=total,
-                delivery_address=address,
-                applied_coupon=coupon_info
-            )
-            self.orders.append(new_order)
-            return True
+            
+            # USO DO BUILDER/DIRECTOR PARA CRIAR O PEDIDO
+            builder = OrderBuilder()
+            director = OrderDirector(builder)
+            
+            try:
+                new_order = director.construct_full_order(
+                    order_id=self._generate_new_id(self.orders),
+                    user=self.current_user.username,
+                    cart_items=self.cart.items.copy(),
+                    total=total,
+                    address=address,
+                    delivery_method=delivery_method_name,
+                    delivery_cost=delivery_cost,
+                    coupon_info=coupon_info
+                )
+                self.orders.append(new_order)
+                return True
+            except ValueError as e:
+                print(f"\n\t[ERRO] Falha ao construir o pedido: {e}")
+                return False
         else:
             print("\n\t[ERRO] The payment was recused.")
             return False
@@ -294,6 +374,7 @@ class ECommerceSystem:
             for order in user_orders:
                 print("\n" + "="*45)
                 print(f"\tOrder ID: {order.id} | Status: {order.status}\n\tTOTAL PAID: $ {order.total:.2f}")
+                print(f"\tDelivery Method: {order.delivery_method} | Cost: $ {order.delivery_cost:.2f}")
                 if order.applied_coupon: print(f"\tDiscount: $ {order.applied_coupon['calculated_discount']:.2f} (Coupon: {order.applied_coupon['code']})")
                 print(f"\tAddress: {order.delivery_address['street']}")
                 print("\tItems:")
