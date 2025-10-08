@@ -9,6 +9,7 @@ from Classes.Ticket import Ticket
 from Classes.PaymentFactory import PaymentFactory
 from Classes.DeliveryFactory import DeliveryFactory
 from Classes.OrderObserver import InventoryObserver
+from Classes.DiscountHandler import CouponHandler, LoyaltyHandler, ShippingDiscountHandler, FinalCostHandler # NOVO IMPORT
 import time
 
 class ECommerceSystem:
@@ -34,15 +35,36 @@ class ECommerceSystem:
         self.current_user = None
         
         self.inventory_observer = InventoryObserver()
+        self._initialize_discount_chain()
         
         self._load_initial_data()
         self._initialized = True
+    
+    def _initialize_discount_chain(self):
+        coupon_handler = CouponHandler()
+        loyalty_handler = LoyaltyHandler()
+        shipping_handler = ShippingDiscountHandler()
+        final_handler = FinalCostHandler()
+        
+        # O encadeamento que define a ordem das regras
+        coupon_handler.set_next(loyalty_handler).set_next(shipping_handler).set_next(final_handler)
+        
+        self._discount_chain_start = coupon_handler
+        
+    def calculate_final_total_with_chain(self, order):
+        print("\n--- INICIANDO CADEIA DE DESCONTOS ---")
+        
+        # Passa a requisição (order) para o início da cadeia
+        final_order = self._discount_chain_start.handle(order)
+        
+        print("--- CADEIA DE DESCONTOS CONCLUÍDA ---")
+        return final_order.total
         
     def _load_initial_data(self):
         admin = Admin('admin', '1234')
         self.users['admin'] = admin
         customer = Customer('customer', '123')
-        customer.add_address('Home', 'Fictional Street, 123', 'Maceió, AL')
+        customer.add_address('Home', '123 Main St', 'Cityville')
         self.users['customer'] = customer
         
         self.products.extend([

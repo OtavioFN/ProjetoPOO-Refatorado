@@ -4,29 +4,34 @@ Este projeto é um sistema simples de e-commerce desenvolvido em Python, utiliza
 
 ## Funcionalidades
 
-- Cadastro e gerenciamento de produtos  
-- Carrinho de compras com cálculo de valores  
-- Sistema de pedidos e cupons de desconto  
-- Avaliações de produtos  
+- Cadastro e gerenciamento de produtos
+- Carrinho de compras com cálculo de valores
+- Sistema de pedidos e cupons de desconto
+- Avaliações de produtos
 - Interface de texto para interação com o usuário
+
+---
 
 ## Padrões de Projeto Utilizados
 
 ### Padrões Criacionais
 
-- **Singleton**  
-  Utilizado na classe `EcommerceSystem`, garantindo que exista apenas uma instância do sistema durante toda a execução.
+- **Singleton**
+  Utilizado na classe `EcommerceSystem`, garantindo que exista apenas uma instância central do sistema para gerenciar o estado global (como listas de produtos e usuários).
 
-- **Factory Method**  
-  Aplicado na criação de pedidos na classe `Order`. Centraliza e controla a lógica de construção dos objetos.
+- **Builder**
+  Aplicado na construção complexa de objetos **Pedido** (`Order`), utilizando as classes `OrderBuilder` e `OrderDirector`. Isso garante que o pedido seja montado e validado passo a passo antes de ser finalizado.
 
-- **Builder**  
-  Usado na construção de cupons na classe `Coupon`. Facilita a criação de objetos complexos passo a passo, permitindo diferentes configurações sem múltiplos construtores.
+- **Factory Method**
+  Utilizado na criação de **Estratégias de Pagamento** (`PaymentFactory`) e **Estratégias de Entrega** (`DeliveryFactory`). Ele isola a lógica de decisão sobre qual classe concreta deve ser instanciada.
 
 ### Padrões Comportamentais
 
-- **Strategy**  
-  Utilizado para aplicar diferentes estratégias de desconto em pedidos. Cada tipo de desconto é encapsulado em uma classe separada, permitindo alternar o comportamento em tempo de execução sem alterar o código do pedido.
+- **Strategy**
+  Utilizado para definir algoritmos intercambiáveis de **Pagamento** (processamento de cartão vs. boleto) e **Entrega** (custo padrão vs. expresso). Permite que o cliente alterne o comportamento em tempo de execução.
 
-- **Observer**  
-  Aplicado no sistema de avaliações. Quando um produto recebe uma nova avaliação, os observadores interessados (como sistemas de notificação ou atualizações internas) são automaticamente notificados da mudança.
+- **Chain of Responsibility**
+  Aplicado no fluxo de checkout para o processamento de descontos. Ele estabelece uma **cadeia de manipuladores** (`CouponHandler`, `LoyaltyHandler`, etc.) para que o pedido passe por todas as regras de desconto sequencialmente, sem que o código principal precise saber de todas elas.
+
+- **Observer**
+  Aplicado na classe **Pedido** (`Order`), que atua como **Subject**. Notifica observadores registrados (como o `InventoryObserver`) imediatamente após a aprovação do pagamento, garantindo a baixa de estoque de forma desacoplada.
