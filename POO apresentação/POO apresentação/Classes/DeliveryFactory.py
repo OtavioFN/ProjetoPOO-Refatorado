@@ -43,5 +43,8 @@ class DeliveryFactory:
             return StandardDelivery()
         elif method == 'express':
             return ExpressDelivery()
+        elif method == 'courier':
+            from Classes.CourierAdapter import CourierAdapter, ExternalCourierAPI
+            return CourierAdapter(ExternalCourierAPI())
         else:
             raise ValueError("Método de entrega não suportado.")

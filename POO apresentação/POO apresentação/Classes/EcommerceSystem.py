@@ -8,6 +8,8 @@ from Classes.Review import Review
 from Classes.Ticket import Ticket
 from Classes.PaymentFactory import PaymentFactory
 from Classes.DeliveryFactory import DeliveryFactory
+from Classes.ProductDecorator import SaleDecorator
+from Classes.CheckoutFacade import CheckoutFacade
 from Classes.OrderObserver import InventoryObserver
 from Classes.DiscountHandler import CouponHandler, LoyaltyHandler, ShippingDiscountHandler, FinalCostHandler # NOVO IMPORT
 import time
@@ -183,10 +185,14 @@ class ECommerceSystem:
             print("\t" + "="*60)
             if not products_to_display: print("\n\tNo products found.")
             else:
+                from Classes.ProductDecorator import SaleDecorator
                 for p in products_to_display:
-                    average, n_rev = self._calculate_average_rating(p.id)
+                    display_p = p
+                    if p.price > 50:
+                        display_p = SaleDecorator(p, 10)
+                    average, n_rev = self._calculate_average_rating(display_p.id)
                     rating_str = f"| Rating: {average:.1f}/5 ({n_rev})" if n_rev > 0 else "| No reviews"
-                    print(f"\tID {p.id}: {p.name} ($ {p.price:.2f}) {rating_str}")
+                    print(f"\tID {display_p.id}: {display_p.name} ($ {display_p.price:.2f}) {rating_str}")
 
             print("\n\t--- Actions ---\n\t1 - View details\n\t2 - Add to cart\n\t3 - Search\n\t4 - Filter / Sort\n\t5 - Clear filters\n\t0 - Back")
             try:
@@ -353,48 +359,22 @@ class ECommerceSystem:
                 else: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
             except ValueError: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
 
+    
     def _payment_process(self, payment_method, address, total, coupon_info, delivery_method_name, delivery_cost):
         UI.clear_screen(); print("\n\t--- Payment simulation ---")
-        
         try:
-            factory = PaymentFactory()
-            strategy = factory.create_payment_strategy(payment_method)
-            payment_approved = strategy.process_payment(total)
-        
-        except ValueError as e:
-            print(f"\n\t[ERROR] {e}"); return False
-
-        if payment_approved:
-            print("\n\tPayment confirmed!")
-            
-            builder = OrderBuilder()
-            director = OrderDirector(builder)
-            
-            try:
-                new_order = director.construct_full_order(
-                    order_id=self._generate_new_id(self.orders),
-                    user=self.current_user.username,
-                    cart_items=self.cart.items.copy(),
-                    total=total,
-                    address=address,
-                    delivery_method=delivery_method_name,
-                    delivery_cost=delivery_cost,
-                    coupon_info=coupon_info
-                )
-
-                new_order.attach(self.inventory_observer)
-                
-                self.orders.append(new_order)
-                
-                new_order.notify(self)
-                
+            facade = CheckoutFacade()
+            success = facade.process(payment_method, address, total, coupon_info, delivery_method_name, delivery_cost, self)
+            if success:
+                print("\n\tOrder placed successfully!"); self.cart.clear()
                 return True
-            except ValueError as e:
-                print(f"\n\t[ERRO] Falha ao construir o pedido: {e}")
+            else:
+                print("\n\tPayment failed. The order was not completed.")
                 return False
-        else:
-            print("\n\t[ERRO] The payment was recused.")
+        except Exception as e:
+            print(f"\n\t[ERROR] {e}")
             return False
+
 
     def _check_orders(self):
         UI.clear_screen(); print("\n\t--- My Orders ---")
