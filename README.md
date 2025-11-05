@@ -6,13 +6,41 @@ Este projeto é um sistema de e-commerce desenvolvido em Python, aplicando conce
 
 ## Funcionalidades
 
-* Cadastro e gerenciamento de produtos  
-* Carrinho de compras com cálculo de valores  
-* Sistema de pedidos, descontos e cupons  
-* **Tratamento robusto de exceções** (Estoque, Pagamento, Input)
-* Avaliações de produtos  
-* Simulação de entrega e pagamento  
-* Interface textual para interação com o usuário  
+* Cadastro e gerenciamento de produtos  
+* Carrinho de compras com cálculo de valores  
+* Sistema de pedidos, descontos e cupons  
+* **Tratamento robusto de exceções** (Estoque, Pagamento, Input)  
+* Avaliações de produtos  
+* Simulação de entrega e pagamento  
+* Interface textual para interação com o usuário  
+
+---
+
+## Tratamento de Exceções
+
+O sistema foi projetado com **tratamento de exceções detalhado e específico**, garantindo que erros sejam tratados de forma **controlada e informativa**, sem interromper o fluxo do programa.
+
+Os blocos `try/except` estão distribuídos principalmente nas classes:
+
+- `Classes/CheckoutFacade.py`  
+- `Classes/EcommerceSystem.py`  
+
+Principais situações tratadas:
+
+* **Entradas inválidas** (`ValueError`, `InvalidInputError`) — ao inserir opções, preços ou quantidades incorretas.  
+* **Erros de estoque** (`InsufficientStockError`) — quando o usuário tenta comprar mais unidades do que o disponível.  
+* **Erros de lógica de negócio** (`ProductNotFoundError`, `InvalidInputError`) — como tentar remover produtos inexistentes do carrinho ou avaliar um produto não comprado.  
+* **Erros inesperados** (`Exception`) — capturados de forma genérica para impedir travamentos do sistema e exibir mensagens amigáveis.  
+
+Esses tratamentos aparecem em pontos críticos do fluxo, como:
+
+- Adição e remoção de itens no carrinho  
+- Processamento de checkout (pagamento e entrega)  
+- Seleção de endereço e método de pagamento  
+- Cadastro e atualização de produtos no modo administrador  
+- Criação de avaliações de produtos  
+
+Essa estrutura de tratamento de erros assegura que o sistema continue estável, exibindo mensagens claras ao usuário e facilitando a depuração.
 
 ---
 
@@ -20,47 +48,49 @@ Este projeto é um sistema de e-commerce desenvolvido em Python, aplicando conce
 
 ### Padrões Criacionais
 
-* **Singleton**  
+* **Singleton**  
     Utilizado na classe `EcommerceSystem`, garantindo que exista apenas **uma instância central do sistema**, responsável por gerenciar usuários, produtos, carrinho e pedidos.
 
-* **Builder**  
-    Aplicado na construção do objeto `Order` (pedido), utilizando as classes `OrderBuilder` e `OrderDirector`.  
+* **Builder**  
+    Aplicado na construção do objeto `Order` (pedido), utilizando as classes `OrderBuilder` e `OrderDirector`.  
     Isso permite que um pedido seja **montado passo a passo**, validando informações antes de ser finalizado.
 
-* **Factory Method**  
-    Presente em `PaymentFactory` e `DeliveryFactory`, que criam instâncias concretas de estratégias de pagamento e entrega.  
+* **Factory Method**  
+    Presente em `PaymentFactory` e `DeliveryFactory`, que criam instâncias concretas de estratégias de pagamento e entrega.  
     Com isso, o sistema pode facilmente **adicionar novos métodos de pagamento ou entrega** sem alterar o código principal.
 
 ---
 
 ### Padrões Comportamentais
 
-* **Strategy**  
-    Define algoritmos intercambiáveis para **pagamento** e **entrega**.  
+* **Strategy**  
+    Define algoritmos intercambiáveis para **pagamento** e **entrega**.  
     Exemplo: alternar entre pagamento com cartão e boleto, ou entre entrega padrão e expressa.
 
-* **Chain of Responsibility**  
-    Usado no processamento de descontos durante o checkout.  
+* **Chain of Responsibility**  
+    Usado no processamento de descontos durante o checkout.  
     Cada manipulador (`CouponHandler`, `LoyaltyHandler`, `ShippingDiscountHandler`, `FinalCostHandler`) aplica uma regra e encaminha o pedido ao próximo, de forma **sequencial e desacoplada**.
 
-* **Observer**  
-    Implementado no `Order` (pedido), que **notifica automaticamente observadores** (como `InventoryObserver`) após o pagamento ser aprovado.  
+* **Observer**  
+    Implementado no `Order` (pedido), que **notifica automaticamente observadores** (como `InventoryObserver`) após o pagamento ser aprovado.  
     Isso garante que a auditoria de estoque seja registrada sem dependência direta entre classes.
 
 ---
 
 ### Padrões Estruturais
 
-* **Adapter**  
-    Implementado em `CourierAdapter.py`.  
+* **Adapter**  
+    Implementado em `CourierAdapter.py`.  
     Adapta uma **API externa simulada** (`ExternalCourierAPI`) ao formato esperado pelo sistema de entrega, permitindo integração sem alterar o código existente.
 
-* **Decorator**  
-    Implementado em `ProductDecorator.py`.  
+* **Decorator**  
+    Implementado em `ProductDecorator.py`.  
     Permite **adicionar funcionalidades** aos produtos dinamicamente, como aplicar **descontos visuais automáticos** (ex: 10% off em produtos acima de R$50), sem modificar a classe original `Product`.
 
-* **Facade**  
-    Implementado em `CheckoutFacade.py`.  
-    Simplifica o fluxo de checkout reunindo em um único ponto:  
-    **processamento de pagamento → verificação/redução de estoque → criação do pedido → notificação.**  
-    Dessa forma, o `CheckoutFacade` encapsula a **transação crítica** do pedido e levanta exceções específicas (como `InsufficientStockError`), permitindo que o método `_payment_process` no `ECommerceSystem` fique mais limpo e focado no tratamento de falhas.
+* **Facade**  
+    Implementado em `CheckoutFacade.py`.  
+    Simplifica o fluxo de checkout reunindo em um único ponto:  
+    **processamento de pagamento → verificação/redução de estoque → criação do pedido → notificação.**  
+    Dessa forma, o `CheckoutFacade` encapsula a **transação crítica** do pedido e levanta exceções específicas (como `InsufficientStockError`), permitindo que o método `_payment_process` no `EcommerceSystem` fique mais limpo e focado no tratamento de falhas.
+
+---
