@@ -11,7 +11,8 @@ from Classes.DeliveryFactory import DeliveryFactory
 from Classes.ProductDecorator import SaleDecorator
 from Classes.CheckoutFacade import CheckoutFacade
 from Classes.OrderObserver import InventoryObserver
-from Classes.DiscountHandler import CouponHandler, LoyaltyHandler, ShippingDiscountHandler, FinalCostHandler # NOVO IMPORT
+from Classes.DiscountHandler import CouponHandler, LoyaltyHandler, ShippingDiscountHandler, FinalCostHandler
+from Classes.EcommerceExceptions import InvalidInputError, InsufficientStockError, ProductNotFoundError
 import time
 
 class ECommerceSystem:
@@ -29,6 +30,7 @@ class ECommerceSystem:
             
         self.users = {}
         self.products = []
+        self.inventory = {} # NOVO: Dicionário para gerenciar o estoque (ID -> Quantidade)
         self.reviews = []
         self.coupons = []
         self.tickets = []
@@ -48,15 +50,36 @@ class ECommerceSystem:
         shipping_handler = ShippingDiscountHandler()
         final_handler = FinalCostHandler()
         
-        # O encadeamento que define a ordem das regras
         coupon_handler.set_next(loyalty_handler).set_next(shipping_handler).set_next(final_handler)
         
         self._discount_chain_start = coupon_handler
         
+    def check_and_reduce_inventory(self, product_id, quantity):
+        if product_id not in self.inventory:
+            raise ProductNotFoundError(f"Produto ID {product_id} não encontrado no inventário.")
+            
+        current_stock = self.inventory[product_id]
+        
+        if current_stock >= quantity:
+            self.inventory[product_id] -= quantity
+            return True
+        else:
+            raise InsufficientStockError(
+                product_id=product_id, 
+                requested=quantity, 
+                available=current_stock
+            )
+
+    def revert_inventory(self, product_id, quantity):
+        if product_id in self.inventory:
+            self.inventory[product_id] += quantity
+        else:
+            # Em um cenário real, isso indicaria um erro grave de sincronização
+            pass
+        
     def calculate_final_total_with_chain(self, order):
         print("\n--- INICIANDO CADEIA DE DESCONTOS ---")
         
-        # Passa a requisição (order) para o início da cadeia
         final_order = self._discount_chain_start.handle(order)
         
         print("--- CADEIA DE DESCONTOS CONCLUÍDA ---")
@@ -69,13 +92,19 @@ class ECommerceSystem:
         customer.add_address('Home', '123 Main St', 'Cityville')
         self.users['customer'] = customer
         
-        self.products.extend([
+        initial_products = [
             Product(1, 'Gaming Notebook', 'Notebook with RTX 4080 graphics card', 8500.00),
             Product(2, 'Gaming Mouse', 'Wireless mouse with 16000 DPI', 350.50),
             Product(3, 'Mechanical Keyboard', 'Keyboard with blue switches and RGB', 450.00)
-        ])
+        ]
         
-        self.coupons.append(PercentageCoupon('PROMO10', 10))
+        self.products.extend(initial_products)
+        
+        # Inicialização do Inventário
+        for p in initial_products:
+            self.inventory[p.id] = 10 
+        
+        self.coupons.append(PercentageCoupon('PROMO10', 0.10))
 
     def _generate_new_id(self, data_list):
         return max(item.id for item in data_list) + 1 if data_list else 1
@@ -189,10 +218,11 @@ class ECommerceSystem:
                 for p in products_to_display:
                     display_p = p
                     if p.price > 50:
-                        display_p = SaleDecorator(p, 10)
+                        display_p = SaleDecorator(p, 0.10) # Corrigindo o valor do desconto para 10% (0.10)
                     average, n_rev = self._calculate_average_rating(display_p.id)
+                    stock_qty = self.inventory.get(display_p.id, 0) # Exibindo o estoque
                     rating_str = f"| Rating: {average:.1f}/5 ({n_rev})" if n_rev > 0 else "| No reviews"
-                    print(f"\tID {display_p.id}: {display_p.name} ($ {display_p.price:.2f}) {rating_str}")
+                    print(f"\tID {display_p.id}: {display_p.name} ($ {display_p.price:.2f}) | Stock: {stock_qty} {rating_str}") # Exibindo estoque
 
             print("\n\t--- Actions ---\n\t1 - View details\n\t2 - Add to cart\n\t3 - Search\n\t4 - Filter / Sort\n\t5 - Clear filters\n\t0 - Back")
             try:
@@ -205,8 +235,19 @@ class ECommerceSystem:
                     product = self.find_product_by_id(add_id)
                     if product:
                         quantity = int(input(f"\tQuantity of '{product.name}': "))
-                        if self.cart.add(add_id, quantity):
-                            print(f"\n\t>>> Added!"); time.sleep(1)
+                        
+                        # TRATAMENTO DE EXCEÇÃO APLICADO AO ADICIONAR AO CARRINHO
+                        max_stock = self.inventory.get(add_id, 0)
+                        try:
+                            # Adicionando o max_stock ao método add do Cart (que foi modificado anteriormente)
+                            if self.cart.add(add_id, quantity, max_stock):
+                                print(f"\n\t>>> Added!"); time.sleep(1)
+                        except (InvalidInputError, InsufficientStockError) as e:
+                            print(f"\n\t[ERROR] {e.message}")
+                            time.sleep(2)
+                        except Exception as e:
+                            print(f"\n\t[ERROR] An unexpected error occurred: {e}")
+                            time.sleep(2)
                     else: print("\n\t[ERROR] Product not found."); time.sleep(2)
                 elif choice == 3: search_term = input("\tTerm to search for: ")
                 elif choice == 4:
@@ -231,7 +272,7 @@ class ECommerceSystem:
         if not comments: print("\tThis product has no reviews yet.")
         else:
             for review in comments:
-                print("\t" + "-"*30 + f"\n\tUser: {review.user}\n\tRating:   {UI.generate_stars(review.rating)}\n\tComment: {review.comment}")
+                print("\t" + "-"*30 + f"\n\tUser: {review.user}\n\tRating:   {UI.generate_stars(review.rating)}\n\tComment: {review.comment}")
         UI.wait_for_enter()
 
     def _filter_menu(self):
@@ -265,16 +306,19 @@ class ECommerceSystem:
                 elif option == 2:
                     if self.cart.is_empty(): print("\n\t[ERROR] Cart is already empty."); UI.pause_and_clear(); continue
                     remove_id = int(input("\tProduct ID to remove: "))
-                    if remove_id in self.cart.items:
-                        name = self.find_product_by_id(remove_id).name
-                        print(f"\n\tYou have {self.cart.items[remove_id]} of '{name}'.")
+                    
+                    try:
                         remove_qty = int(input("\tHow many do you want to remove? "))
+                        # O método self.cart.remove já foi modificado para levantar exceções
                         result = self.cart.remove(remove_id, remove_qty)
                         if result == "partially_removed": print(f"\n\t{remove_qty} unit(s) removed.")
-                        elif result == "fully_removed": print(f"\n\tItem '{name}' removed.")
-                        else: print("\n\t[ERROR] Invalid quantity.")
-                    else: print("\n\t[ERROR] Product not in cart.")
-                    UI.pause_and_clear()
+                        elif result == "fully_removed": print(f"\n\tItem removed.")
+                        UI.pause_and_clear()
+                    except (InvalidInputError, ProductNotFoundError) as e:
+                        print(f"\n\t[ERROR] {e.message}")
+                        UI.pause_and_clear()
+                    except ValueError:
+                        print("\n\t[ERROR] Invalid quantity."); UI.pause_and_clear()
                 elif option == 0: break
             except (ValueError, KeyError): print("\n\t[ERROR] Invalid option or ID."); UI.pause_and_clear()
 
@@ -317,13 +361,15 @@ class ECommerceSystem:
         except (ValueError, IndexError): print("\n\t[ERROR] Invalid choice."); UI.pause_and_clear(); return
         
         UI.clear_screen(); print("\n\t--- Select Payment Method ---")
-        print("\t1 - Credit Card\n\t2 - Bank Slip\n\t0 - Cancel")
+        print("\t1 - Credit Card\n\t2 - Bank Slip\n\t3 - PayPal\n\t0 - Cancel") # Adicionando opção PayPal
         try:
             payment_option = int(input("\n\t=> "))
             if payment_option == 1:
                 payment_method = 'creditcard'
             elif payment_option == 2:
                 payment_method = 'bankslip'
+            elif payment_option == 3: # Novo
+                payment_method = 'paypal'
             elif payment_option == 0:
                 print("\n\t[INFO] Order cancelled."); UI.pause_and_clear(); return
             else:
@@ -331,48 +377,38 @@ class ECommerceSystem:
         except ValueError:
             print("\n\t[ERROR] Invalid option."); UI.pause_and_clear(); return
 
+        # A chamada para _payment_process está delegada ao CheckoutFacade, que tratará a exceção.
         success = self._payment_process(payment_method, selected_address, final_total, applied_coupon, delivery_method.get_name(), delivery_cost)
         if success: print("\n\tOrder placed successfully!"); self.cart.clear()
         else: print("\n\tPayment failed. The order was not completed.")
         UI.pause_and_clear(4)
 
-    def _select_delivery(self, products_total):
-        while True:
-            UI.clear_screen(); print("\n\t--- Select Delivery Method ---")
-            
-            factory = DeliveryFactory()
-            standard = factory.create_delivery_strategy('standard')
-            express = factory.create_delivery_strategy('express')
-            
-            standard_cost = standard.calculate_cost(products_total)
-            express_cost = express.calculate_cost(products_total)
-            
-            print(f"\t1 - {standard.get_name()} ({standard.get_estimated_time()}) | Cost: $ {standard_cost:.2f}")
-            print(f"\t2 - {express.get_name()} ({express.get_estimated_time()}) | Cost: $ {express_cost:.2f}")
-            print("\t0 - Cancel Order")
-
-            try:
-                choice = int(input("\n\t=> "))
-                if choice == 1: return standard, standard_cost
-                elif choice == 2: return express, express_cost
-                elif choice == 0: return None, None
-                else: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
-            except ValueError: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
-
-    
+    # O método _payment_process já possui um try/except genérico que capturará as exceções do Facade.
     def _payment_process(self, payment_method, address, total, coupon_info, delivery_method_name, delivery_cost):
         UI.clear_screen(); print("\n\t--- Payment simulation ---")
         try:
             facade = CheckoutFacade()
-            success = facade.process(payment_method, address, total, coupon_info, delivery_method_name, delivery_cost, self)
+            
+            # Necessário passar o ECommerceSystem para que o Facade possa usar o check_and_reduce_inventory
+            success = facade.process(payment_method, address, total, coupon_info, delivery_method_name, delivery_cost, self) 
+            
             if success:
-                print("\n\tOrder placed successfully!"); self.cart.clear()
+                print("\n\tOrder placed successfully!")
+                self.cart.clear()
                 return True
             else:
+                # O Facade não deve retornar False, deve levantar exceção. 
+                # Se chegou aqui, é um erro não tratado (o que não queremos).
                 print("\n\tPayment failed. The order was not completed.")
                 return False
+        # TRATAMENTO DE EXCEÇÃO CENTRALIZADO
+        except (InsufficientStockError, ProductNotFoundError, InvalidInputError) as e:
+            # Captura exceções de domínio mais específicas
+            print(f"\n\t[ERROR] CRITICAL ORDER FAILURE: {e}")
+            return False
         except Exception as e:
-            print(f"\n\t[ERROR] {e}")
+            # Captura qualquer outra exceção inesperada
+            print(f"\n\t[ERROR] AN UNEXPECTED ERROR OCCURRED: {e}")
             return False
 
 
@@ -388,7 +424,10 @@ class ECommerceSystem:
                 if order.applied_coupon: print(f"\tDiscount: $ {order.applied_coupon['calculated_discount']:.2f} (Coupon: {order.applied_coupon['code']})")
                 print(f"\tAddress: {order.delivery_address['street']}")
                 print("\tItems:")
-                for p_id, quantity in order.items.items(): print(f"\t  - {quantity}x {self.find_product_by_id(p_id).name}")
+                for p_id, quantity in order.items.items(): 
+                    product = self.find_product_by_id(p_id)
+                    if product: print(f"\t  - {quantity}x {product.name}")
+                    else: print(f"\t  - {quantity}x UNKNOWN PRODUCT (ID {p_id})")
                 print("="*45)
         UI.wait_for_enter()
 
@@ -403,13 +442,19 @@ class ECommerceSystem:
         
         try:
             review_id = int(input("\n\t=> "))
-            if review_id not in purchased_products: raise ValueError
+            if review_id not in purchased_products: raise ProductNotFoundError("Product not found in your purchased history.")
             rating = int(input("\tRating from 1 to 5: "))
-            if not 1 <= rating <= 5: print("\n\t[ERROR] Invalid rating."); UI.pause_and_clear(); return
             comment = input("\tComment (optional): ")
+            
+            # O construtor do Review já levanta InvalidInputError se o rating for inválido.
             self.reviews.append(Review(review_id, self.current_user.username, rating, comment))
             print("\n\tReview registered!"); UI.pause_and_clear()
-        except (ValueError, KeyError): print("\n\t[ERROR] Invalid ID."); UI.pause_and_clear()
+            
+        except (ProductNotFoundError, InvalidInputError) as e:
+            # Capturando as exceções específicas levantadas pelo Review ou pela busca.
+            print(f"\n\t[ERROR] {e.message}"); UI.pause_and_clear()
+        except ValueError: 
+            print("\n\t[ERROR] Invalid ID or rating type."); UI.pause_and_clear()
 
     def _manage_profile(self):
         while True:
@@ -456,9 +501,10 @@ class ECommerceSystem:
                     if not addresses: print("\n\t[ERROR] No addresses to remove."); UI.pause_and_clear(); continue
                     remove_num = int(input("\tNumber of the address to remove: "))
                     if 1 <= remove_num <= len(addresses): print(f"\n\tAddress '{addresses.pop(remove_num - 1)['nickname']}' removed!")
+                    else: raise IndexError 
                 elif choice == 0: break
                 UI.pause_and_clear()
-            except ValueError: print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
+            except (ValueError, IndexError): print("\n\t[ERROR] Invalid option."); UI.pause_and_clear()
 
     def _customer_support_menu(self):
         while True:
@@ -493,29 +539,58 @@ class ECommerceSystem:
                 option = int(input("\n\t=> "))
                 if option == 1:
                     UI.clear_screen(); print("\n\t--- Catalog ---")
-                    for p in self.products: print(f"\tID {p.id}: {p.name} - $ {p.price:.2f}")
+                    for p in self.products: print(f"\tID {p.id}: {p.name} - $ {p.price:.2f} (Stock: {self.inventory.get(p.id, 0)})")
                     UI.wait_for_enter()
                 elif option == 2:
                     UI.clear_screen(); print("\n\t--- Add ---")
-                    name, desc, price = input("\tName: "), input("\tDescription: "), float(input("\tPrice: "))
-                    self.products.append(Product(self._generate_new_id(self.products), name, desc, price)); print("\n\tProduct added!")
+                    name, desc, price_str = input("\tName: "), input("\tDescription: "), input("\tPrice: ")
+                    stock_str = input("\tInitial Stock: ")
+                    
+                    try:
+                        price = float(price_str)
+                        stock = int(stock_str)
+                        
+                        new_id = self._generate_new_id(self.products)
+                        self.products.append(Product(new_id, name, desc, price))
+                        self.inventory[new_id] = stock # Adiciona ao inventário
+                        print("\n\tProduct added!")
+                        
+                    except InvalidInputError as e:
+                        print(f"\n\t[ERROR] {e.message}")
+                    except ValueError:
+                        print("\n\t[ERROR] Price and Stock must be valid numbers.")
                     UI.pause_and_clear()
+                    
                 elif option == 3:
                     UI.clear_screen(); print("\n\t--- Edit ---")
                     product = self.find_product_by_id(int(input("\tProduct ID: ")))
                     if product:
                         print(f"\n\tEditing '{product.name}'. Leave blank to not change.")
-                        new_name, new_desc, new_price = input("\tNew name: "), input("\tNew description: "), input("\tNew price: ")
+                        new_name, new_desc, new_price_str = input("\tNew name: "), input("\tNew description: "), input("\tNew price: ")
+                        new_stock_str = input("\tNew stock (Current: {}): ".format(self.inventory.get(product.id, 0)))
+
                         if new_name: product.name = new_name
                         if new_desc: product.description = new_desc
-                        if new_price: product.price = float(new_price)
-                        print("\n\tProduct updated!")
+                        
+                        try:
+                            if new_price_str: product.price = float(new_price_str)
+                            if new_stock_str: self.inventory[product.id] = int(new_stock_str)
+                            print("\n\tProduct updated!")
+                        except InvalidInputError as e:
+                            print(f"\n\t[ERROR] {e.message}")
+                        except ValueError:
+                            print("\n\t[ERROR] Price or Stock must be valid numbers.")
                     else: print("\n\t[ERROR] Product not found.")
                     UI.pause_and_clear()
+                    
                 elif option == 4:
                     UI.clear_screen(); print("\n\t--- Remove ---")
-                    product = self.find_product_by_id(int(input("\tProduct ID: ")))
-                    if product: self.products.remove(product); print(f"\n\tProduct '{product.name}' removed!")
+                    remove_id = int(input("\tProduct ID: "))
+                    product = self.find_product_by_id(remove_id)
+                    if product: 
+                        self.products.remove(product)
+                        if remove_id in self.inventory: del self.inventory[remove_id] # Remove do inventário
+                        print(f"\n\tProduct '{product.name}' removed!")
                     else: print("\n\t[ERROR] Product not found.")
                     UI.pause_and_clear()
                 elif option == 0: break
@@ -530,7 +605,9 @@ class ECommerceSystem:
                     UI.clear_screen(); print("\n\t--- Coupon List ---")
                     if not self.coupons: print("\n\tNo coupons.")
                     else:
-                        for c in self.coupons: print(c.get_display_info())
+                        for c in self.coupons: 
+                            # Assumindo que o Coupon tem um método get_display_info ou __str__
+                            print(f"\tCode: {c.code} | Active: {'Yes' if c.active else 'No'} | Type: {c.__class__.__name__}")
                     UI.wait_for_enter()
                 elif choice == 2:
                     UI.clear_screen(); print("\n\t--- Add Coupon ---")
@@ -577,7 +654,7 @@ class ECommerceSystem:
                         print("\n\tResponse sent!"); UI.pause_and_clear()
                     else: print("\n\t[ERROR] Invalid ID."); UI.pause_and_clear()
                 elif choice == 2:
-                    UI.clear_screen(); print("\n\t--- Ticket History ---") # <-- Linha Corrigida
+                    UI.clear_screen(); print("\n\t--- Ticket History ---")
                     if not self.tickets: print("\n\tNo tickets.")
                     else:
                         for ticket in self.tickets:

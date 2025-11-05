@@ -6,12 +6,13 @@ Este projeto é um sistema de e-commerce desenvolvido em Python, aplicando conce
 
 ## Funcionalidades
 
-- Cadastro e gerenciamento de produtos  
-- Carrinho de compras com cálculo de valores  
-- Sistema de pedidos, descontos e cupons  
-- Avaliações de produtos  
-- Simulação de entrega e pagamento  
-- Interface textual para interação com o usuário  
+* Cadastro e gerenciamento de produtos  
+* Carrinho de compras com cálculo de valores  
+* Sistema de pedidos, descontos e cupons  
+* **Tratamento robusto de exceções** (Estoque, Pagamento, Input)
+* Avaliações de produtos  
+* Simulação de entrega e pagamento  
+* Interface textual para interação com o usuário  
 
 ---
 
@@ -19,48 +20,47 @@ Este projeto é um sistema de e-commerce desenvolvido em Python, aplicando conce
 
 ### Padrões Criacionais
 
-- **Singleton**  
-  Utilizado na classe `EcommerceSystem`, garantindo que exista apenas **uma instância central do sistema**, responsável por gerenciar usuários, produtos, carrinho e pedidos.
+* **Singleton**  
+    Utilizado na classe `EcommerceSystem`, garantindo que exista apenas **uma instância central do sistema**, responsável por gerenciar usuários, produtos, carrinho e pedidos.
 
-- **Builder**  
-  Aplicado na construção do objeto `Order` (pedido), utilizando as classes `OrderBuilder` e `OrderDirector`.  
-  Isso permite que um pedido seja **montado passo a passo**, validando informações antes de ser finalizado.
+* **Builder**  
+    Aplicado na construção do objeto `Order` (pedido), utilizando as classes `OrderBuilder` e `OrderDirector`.  
+    Isso permite que um pedido seja **montado passo a passo**, validando informações antes de ser finalizado.
 
-- **Factory Method**  
-  Presente em `PaymentFactory` e `DeliveryFactory`, que criam instâncias concretas de estratégias de pagamento e entrega.  
-  Com isso, o sistema pode facilmente **adicionar novos métodos de pagamento ou entrega** sem alterar o código principal.
+* **Factory Method**  
+    Presente em `PaymentFactory` e `DeliveryFactory`, que criam instâncias concretas de estratégias de pagamento e entrega.  
+    Com isso, o sistema pode facilmente **adicionar novos métodos de pagamento ou entrega** sem alterar o código principal.
 
 ---
 
 ### Padrões Comportamentais
 
-- **Strategy**  
-  Define algoritmos intercambiáveis para **pagamento** e **entrega**.  
-  Exemplo: alternar entre pagamento com cartão e boleto, ou entre entrega padrão e expressa.
+* **Strategy**  
+    Define algoritmos intercambiáveis para **pagamento** e **entrega**.  
+    Exemplo: alternar entre pagamento com cartão e boleto, ou entre entrega padrão e expressa.
 
-- **Chain of Responsibility**  
-  Usado no processamento de descontos durante o checkout.  
-  Cada manipulador (`CouponHandler`, `LoyaltyHandler`, `ShippingDiscountHandler`, `FinalCostHandler`) aplica uma regra e encaminha o pedido ao próximo, de forma **sequencial e desacoplada**.
+* **Chain of Responsibility**  
+    Usado no processamento de descontos durante o checkout.  
+    Cada manipulador (`CouponHandler`, `LoyaltyHandler`, `ShippingDiscountHandler`, `FinalCostHandler`) aplica uma regra e encaminha o pedido ao próximo, de forma **sequencial e desacoplada**.
 
-- **Observer**  
-  Implementado no `Order` (pedido), que **notifica automaticamente observadores** (como `InventoryObserver`) após o pagamento ser aprovado.  
-  Isso garante que o estoque seja atualizado sem dependência direta entre classes.
+* **Observer**  
+    Implementado no `Order` (pedido), que **notifica automaticamente observadores** (como `InventoryObserver`) após o pagamento ser aprovado.  
+    Isso garante que a auditoria de estoque seja registrada sem dependência direta entre classes.
 
 ---
 
 ### Padrões Estruturais
 
-- **Adapter**  
-  Implementado em `CourierAdapter.py`.  
-  Adapta uma **API externa simulada** (`ExternalCourierAPI`) ao formato esperado pelo sistema de entrega, permitindo integração sem alterar o código existente.
+* **Adapter**  
+    Implementado em `CourierAdapter.py`.  
+    Adapta uma **API externa simulada** (`ExternalCourierAPI`) ao formato esperado pelo sistema de entrega, permitindo integração sem alterar o código existente.
 
-- **Decorator**  
-  Implementado em `ProductDecorator.py`.  
-  Permite **adicionar funcionalidades** aos produtos dinamicamente, como aplicar **descontos visuais automáticos** (ex: 10% off em produtos acima de R$50), sem modificar a classe original `Product`.
+* **Decorator**  
+    Implementado em `ProductDecorator.py`.  
+    Permite **adicionar funcionalidades** aos produtos dinamicamente, como aplicar **descontos visuais automáticos** (ex: 10% off em produtos acima de R$50), sem modificar a classe original `Product`.
 
-- **Facade**  
-  Implementado em `CheckoutFacade.py`.  
-  Simplifica o fluxo de checkout reunindo em um único ponto:  
-  pagamento → criação do pedido → aplicação de descontos → notificação de estoque.  
-  Dessa forma, o método `_payment_process` ficou muito mais limpo e de fácil manutenção.
-
+* **Facade**  
+    Implementado em `CheckoutFacade.py`.  
+    Simplifica o fluxo de checkout reunindo em um único ponto:  
+    **processamento de pagamento → verificação/redução de estoque → criação do pedido → notificação.**  
+    Dessa forma, o `CheckoutFacade` encapsula a **transação crítica** do pedido e levanta exceções específicas (como `InsufficientStockError`), permitindo que o método `_payment_process` no `ECommerceSystem` fique mais limpo e focado no tratamento de falhas.
